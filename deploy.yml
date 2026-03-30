@@ -1,0 +1,81 @@
+---
+- name: Deploy Apache container with volume and read-only access
+  hosts: prod
+  become: true
+  vars_files:
+    - secret/cred.yml
+
+  pre_tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+    - name: Install pre-requisite packages
+      ansible.builtin.apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - apt-transport-https
+        - git
+        - wget
+        - ca-certificates
+        - curl
+        - software-properties-common
+      when: ansible_facts['os_family'] == 'Debian'
+    - name: Add Docker GPG key
+      ansible.builtin.apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      ansible.builtin.apt_repository:
+        repo: deb https://download.docker.com/linux/ubuntu focal stable
+        state: present
+
+    - name: Install Docker
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+        
+    - name: Ensure Docker service is running
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+  tasks:
+    - name: Remove existing Apache container if it exists
+      community.docker.docker_container:
+        name: apache
+        state: absent
+        
+    - name: Create folder for index.html
+      ansible.builtin.file:
+        path: /opt/apache-web
+        state: directory
+        mode: '0755'
+
+
+    - name: Create copy index.html to the container
+      ansible.builtin.template:
+        src: index.html.j2
+        dest: /opt/apache-web/index.html
+        mode: '0644'
+
+    - name: Deploy Apache container with volume mount and read-only access to index.html
+      community.docker.docker_container:
+        name: apache
+        image: httpd:latest
+        state: started
+        mounts:
+          - type: bind
+            source: /opt/apache-web/index.html
+            target: /usr/local/apache2/htdocs/index.html
+            read_only: true
+        ports:
+          - "80:80"

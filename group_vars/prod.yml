@@ -1,0 +1,4 @@
+---
+ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+ansible_user: vagrant
+ansible_password: "{{ vault_ansible_password }}"
