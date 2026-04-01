@@ -49,10 +49,54 @@
         enabled: true
 
   tasks:
+    - name: Get all containers
+      community.docker.docker_host_info:
+        containers: true
+        containers_filters:
+          status:
+            - exited
+            - running
+            - created
+            - restarting
+            - paused
+            - dead
+      register: container_info
+
+    - name: Debug Docker Containers
+      debug:
+        msg: "Container Name: {{ container_info | to_nice_json }}"
+
+    - name: Display container information
+      ansible.builtin.debug:
+        msg: 
+          - "Container: {{ item.Names[0] | replace('/', '') }}"
+          - "Status: {{ item.Status }}"
+      loop: "{{ container_info.containers }}"
+      when: container_info.containers is defined
+
+    - name: Extract Container name
+      ansible.builtin.set_fact:
+        container_name: "{{ container_info.containers | map(attribute='Names') | flatten | map('replace', '/', '') | list }}"
+      tags: extract_container_name
+
+    - name: Debug container_name
+      debug:
+        var: container_name
+        #verbosity: 2
+
+
+    - name: Stop all containers running with docker before deploying Wordpress
+      docker_container:
+        name: "{{ item }}"
+        state: absent
+        force_kill: true
+      loop: "{{ container_name }}"
+      when: item in container_name
     - name: Remove existing Apache container if it exists
       community.docker.docker_container:
         name: apache
         state: absent
+      
         
     - name: Create folder for index.html
       ansible.builtin.file:
