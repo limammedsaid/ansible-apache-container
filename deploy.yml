@@ -41,7 +41,7 @@
           - docker-compose-plugin
         state: present
         update_cache: true
-        
+
     - name: Ensure Docker service is running
       ansible.builtin.service:
         name: docker
@@ -49,55 +49,66 @@
         enabled: true
 
   tasks:
-    - name: Get all containers
-      community.docker.docker_host_info:
-        containers: true
-        containers_filters:
-          status:
-            - exited
-            - running
-            - created
-            - restarting
-            - paused
-            - dead
-      register: container_info
+    # - name: Get all containers
+    #   community.docker.docker_host_info:
+    #     containers: true
+    #     containers_filters:
+    #       status:
+    #         - exited
+    #         - running
+    #         - created
+    #         - restarting
+    #         - paused
+    #         - dead
+    #   register: container_info
 
-    - name: Debug Docker Containers
-      debug:
-        msg: "Container Name: {{ container_info | to_nice_json }}"
+    # - name: Debug Docker Containers
+    #   debug:
+    #     msg: "Container Name: {{ container_info | to_nice_json }}"
 
-    - name: Display container information
-      ansible.builtin.debug:
-        msg: 
-          - "Container: {{ item.Names[0] | replace('/', '') }}"
-          - "Status: {{ item.Status }}"
-      loop: "{{ container_info.containers }}"
-      when: container_info.containers is defined
+    # - name: Display container information
+    #   ansible.builtin.debug:
+    #     msg: 
+    #       - "Container: {{ item.Names[0] | replace('/', '') }}"
+    #       - "Status: {{ item.Status }}"
+    #   loop: "{{ container_info.containers }}"
+    #   when: container_info.containers is defined
 
-    - name: Extract Container name
-      ansible.builtin.set_fact:
-        container_name: "{{ container_info.containers | map(attribute='Names') | flatten | map('replace', '/', '') | list }}"
-      tags: extract_container_name
+    # - name: Extract Container name
+    #   ansible.builtin.set_fact:
+    #     container_name: "{{ container_info.containers | map(attribute='Names') | flatten | map('replace', '/', '') | list }}"
+    #   tags: extract_container_name
 
-    - name: Debug container_name
-      debug:
-        var: container_name
-        #verbosity: 2
+    # - name: Debug container_name
+    #   debug:
+    #     var: container_name
+    #     #verbosity: 2
 
 
-    - name: Stop all containers running with docker before deploying Wordpress
-      docker_container:
-        name: "{{ item }}"
-        state: absent
-        force_kill: true
-      loop: "{{ container_name }}"
-      when: item in container_name
-    - name: Remove existing Apache container if it exists
-      community.docker.docker_container:
-        name: apache
-        state: absent
-      
-        
+    # - name: Stop all containers running with docker before deploying Wordpress
+    #   docker_container:
+    #     name: "{{ item }}"
+    #     state: absent
+    #     force_kill: true
+    #   loop: "{{ container_name }}"
+    #   when: item in container_name
+
+    # - name: Remove existing Apache container if it exists
+    #   community.docker.docker_container:
+    #     name: apache
+    #     state: absent
+    - name: Get all container IDs
+      ansible.builtin.command:
+        cmd: docker ps -aq
+      register: container_ids
+      changed_when: false
+
+    - name: Stop and remove all containers
+      ansible.builtin.command:
+        cmd: "docker rm -f {{ container_ids.stdout_lines | join(' ') }}"
+      when: container_ids.stdout_lines | length > 0
+      ignore_errors: true
+    
     - name: Create folder for index.html
       ansible.builtin.file:
         path: /opt/apache-web
@@ -111,15 +122,26 @@
         dest: /opt/apache-web/index.html
         mode: '0644'
 
-    - name: Deploy Apache container with volume mount and read-only access to index.html
-      community.docker.docker_container:
-        name: apache
-        image: httpd:latest
-        state: started
-        mounts:
-          - type: bind
-            source: /opt/apache-web/index.html
-            target: /usr/local/apache2/htdocs/index.html
-            read_only: true
-        ports:
-          - "80:80"
+    # - name: Deploy Apache container with volume mount and read-only access to index.html
+    #   community.docker.docker_container:
+    #     name: apache
+    #     image: httpd:latest
+    #     state: started
+    #     mounts:
+    #       - type: bind
+    #         source: /opt/apache-web/index.html
+    #         target: /usr/local/apache2/htdocs/index.html
+    #         read_only: true
+    #     ports:
+    #       - "80:80"
+
+    - name: Deploy Apache container with volume mount and read-only access
+      ansible.builtin.command:
+        cmd: >
+          docker run -d
+          --name apache
+          --mount type=bind,source=/opt/apache-web/index.html,target=/usr/local/apache2/htdocs/index.html,readonly
+          -p 80:80
+          httpd:latest
+      register: docker_run
+      changed_when: docker_run.rc == 0
